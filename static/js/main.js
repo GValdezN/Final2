@@ -1,100 +1,88 @@
 $(document).ready(function () {
-    // Inicialización
-    $('.image-section').hide();
-    $('.loader').hide();
-    $('#result-upload').hide();
-    $('#result-camera').hide();
+    const video = document.getElementById('camera-stream');
+    const canvas = document.getElementById('camera-canvas');
+    const loader = $('.loader');
 
-    // Cambiar entre secciones de la barra de navegación
+    // Alternar entre secciones
     $('a.nav-link').click(function (e) {
         e.preventDefault();
         const target = $(this).attr('href');
-
-        // Ocultar ambas secciones
-        $('#upload-section').hide();
-        $('#camera-section').hide();
-
-        // Mostrar la sección seleccionada
-        $(target).show();
+        $('.content-section').hide(); // Ocultar todas las secciones
+        $(target).show(); // Mostrar la sección seleccionada
     });
 
-    // Opción 1: Subir Imagen
-    function readURL(input) {
-        if (input.files && input.files[0]) {
-            var reader = new FileReader();
-            reader.onload = function (e) {
-                $('#imagePreview').css('background-image', 'url(' + e.target.result + ')');
-                $('#imagePreview').hide();
-                $('#imagePreview').fadeIn(650);
-            };
-            reader.readAsDataURL(input.files[0]);
+    // Iniciar cámara al cargar
+    async function startCamera() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video.srcObject = stream;
+        } catch (err) {
+            console.error("Error al acceder a la cámara:", err);
+            alert("No se pudo acceder a la cámara. Verifica los permisos.");
         }
     }
 
-    $("#imageUpload").change(function () {
-        $('.image-section').show();
-        $('#btn-predict').show();
-        $('#result-upload').text('');
-        $('#result-upload').hide();
-        readURL(this);
+    // Predicción desde la cámara
+    $('#btn-capture').click(function () {
+        const context = canvas.getContext('2d');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const imageData = canvas.toDataURL('image/jpeg');
+        loader.show();
+
+        $.ajax({
+            type: 'POST',
+            url: '/camera_predict',
+            data: JSON.stringify({ image: imageData }),
+            contentType: 'application/json',
+            success: function (data) {
+                loader.hide();
+                $('#result-camera').html(
+                    `<b>Predicción:</b> ${data.predicted_class}<br><b>Confianza:</b> ${data.confidence_percentage}%`
+                );
+            },
+            error: function (error) {
+                loader.hide();
+                console.error("Error:", error);
+            }
+        });
     });
 
-    // Predicción al subir imagen
-    $('#btn-predict').click(function () {
-        var form_data = new FormData($('#upload-file')[0]);
+    // Mostrar vista previa de la imagen subida
+    $('#imageUpload').change(function () {
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            $('#uploaded-image').attr('src', e.target.result).show();
+            $('#result-upload').html(''); // Limpiar resultados previos
+        };
+        reader.readAsDataURL(this.files[0]);
+    });
 
-        // Mostrar animación de carga
-        $(this).hide();
-        $('.loader').show();
+    // Predicción desde una imagen subida
+    $('#btn-predict-upload').click(function () {
+        const form_data = new FormData($('#upload-file')[0]);
+        loader.show();
 
-        // Llamada al endpoint de predicción
         $.ajax({
             type: 'POST',
             url: '/predict',
             data: form_data,
             contentType: false,
-            cache: false,
             processData: false,
-            async: true,
             success: function (data) {
-                // Mostrar resultados
-                $('.loader').hide();
-                $('#result-upload').fadeIn(1000);
-                let predictedClass = data.predicted_class;
-                let confidencePercentage = data.confidence_percentage;
+                loader.hide();
                 $('#result-upload').html(
-                    '<b>Predicción:</b> ' +
-                    predictedClass +
-                    '<br><b>Confianza:</b> ' +
-                    confidencePercentage +
-                    '%'
+                    `<b>Predicción:</b> ${data.predicted_class}<br><b>Confianza:</b> ${data.confidence_percentage}%`
                 );
             },
+            error: function (error) {
+                loader.hide();
+                console.error("Error:", error);
+            }
         });
     });
 
-    // Opción 2: Cámara en Tiempo Real
-    function updateCameraResult(predictedClass, confidencePercentage) {
-        $('#result-camera').html(
-            '<b>Predicción:</b> ' +
-            predictedClass +
-            '<br><b>Confianza:</b> ' +
-            confidencePercentage +
-            '%'
-        );
-        $('#result-camera').fadeIn(1000);
-    }
-
-    // Stream de cámara (si deseas actualizaciones dinámicas desde backend)
-    setInterval(function () {
-        $.ajax({
-            type: 'GET',
-            url: '/camera_predict',
-            success: function (data) {
-                let predictedClass = data.predicted_class;
-                let confidencePercentage = data.confidence_percentage;
-                updateCameraResult(predictedClass, confidencePercentage);
-            },
-        });
-    }, 3000); // Actualizar cada 3 segundos
+    startCamera(); // Iniciar cámara al cargar
 });

@@ -11,55 +11,47 @@
 </head>
 <body>
     <div class="container">
+        <!-- Barra de navegación -->
         <nav class="navbar navbar-expand-lg navbar-light bg-light">
             <a class="navbar-brand" href="#">Clasificador</a>
-            <div class="collapse navbar-collapse">
-                <ul class="navbar-nav mr-auto">
+            <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="#upload-section">Subir Imagen</a>
+                        <a class="nav-link active" href="#camera-section">Cámara en Tiempo Real</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="#camera-section">Cámara</a>
+                        <a class="nav-link" href="#upload-section">Subir Imagen</a>
                     </li>
                 </ul>
             </div>
         </nav>
 
-        <!-- Sección para subir imágenes -->
-        <div id="upload-section" style="margin: 50px;">
-            <div class="marco">
-                <h2>Subir Imagen</h2>
-                <form id="upload-file" method="post" enctype="multipart/form-data">
-                    <label for="imageUpload" class="upload-label btn btn-primary">Elegir Imagen</label>
-                    <input type="file" name="file" id="imageUpload" accept=".png, .jpg, .jpeg" style="display: none;">
-                </form>
-                <div class="image-section" style="display: none;">
-                    <div class="img-preview">
-                        <div id="imagePreview"></div>
-                    </div>
-                    <div>
-                        <button type="button" class="btn btn-dark" id="btn-predict">Predicción</button>
-                    </div>
-                </div>
-                <div class="loader" style="display: none;">Cargando...</div>
-                <h3 id="result-upload">
-                    <span></span>
-                </h3>
-            </div>
+        <!-- Sección de cámara -->
+        <div id="camera-section" class="content-section" style="margin-top: 20px;">
+            <h2>Cámara en Tiempo Real</h2>
+            <video id="camera-stream" autoplay playsinline style="border: 1px solid black; width: 100%;"></video>
+            <canvas id="camera-canvas" style="display: none;"></canvas>
+            <button class="btn btn-primary" id="btn-capture" style="margin-top: 10px;">Capturar y Predecir</button>
+            <div class="loader" style="display: none;">Procesando...</div>
+            <h3 id="result-camera"></h3>
         </div>
 
-        <!-- Sección para usar la cámara -->
-        <div id="camera-section" style="margin: 50px;">
-            <div class="marco">
-                <h2>Cámara en Tiempo Real</h2>
-                <div>
-                    <video id="camera-stream" autoplay></video>
-                </div>
-                <div class="loader" style="display: none;">Procesando...</div>
-                <h3 id="result-camera">
-                    <span></span>
-                </h3>
+        <!-- Sección de subir imágenes -->
+        <div id="upload-section" class="content-section" style="margin-top: 20px; display: none;">
+            <h2>Subir Imagen</h2>
+            <form id="upload-file" method="post" enctype="multipart/form-data">
+                <label for="imageUpload" class="btn btn-primary">Elegir Imagen</label>
+                <input type="file" name="file" id="imageUpload" accept=".png, .jpg, .jpeg" style="display: none;">
+            </form>
+            <div class="image-preview" style="margin-top: 20px;">
+                <img id="uploaded-image" src="#" alt="Imagen subida" style="display: none; max-width: 100%; border: 1px solid #ddd; margin-bottom: 10px;">
             </div>
+            <button class="btn btn-dark" id="btn-predict-upload" style="margin-top: 10px;">Predecir</button>
+            <div class="loader" style="display: none;">Procesando...</div>
+            <h3 id="result-upload"></h3>
         </div>
     </div>
 
