@@ -29,17 +29,30 @@
             </div>
         </nav>
 
-        <!-- Sección de cámara -->
+        <!-- Sección de Cámara en Tiempo Real -->
         <div id="camera-section" class="content-section" style="margin-top: 20px;">
             <h2>Cámara en Tiempo Real</h2>
-            <video id="camera-stream" autoplay playsinline style="border: 1px solid black; width: 100%;"></video>
-            <canvas id="camera-canvas" style="display: none;"></canvas>
-            <button class="btn btn-primary" id="btn-capture" style="margin-top: 10px;">Capturar y Predecir</button>
-            <div class="loader" style="display: none;">Procesando...</div>
-            <h3 id="result-camera"></h3>
+            <div style="display: flex; gap: 20px;">
+                <!-- Vista en Vivo -->
+                <div>
+                    <h4>Vista en Vivo</h4>
+                    <video id="camera-stream" autoplay playsinline style="border: 1px solid black; width: 100%;"></video>
+                    <canvas id="camera-canvas" style="display: none;"></canvas>
+                    <button class="btn btn-primary" id="btn-toggle-camera" style="margin-top: 10px;">Cambiar Cámara</button>
+                    <button class="btn btn-success" id="btn-capture" style="margin-top: 10px;">Capturar y Predecir</button>
+                </div>
+
+                <!-- Foto Capturada -->
+                <div>
+                    <h4>Foto Capturada</h4>
+                    <canvas id="captured-image" style="border: 1px solid black; width: 100%;"></canvas>
+                </div>
+            </div>
+            <div class="loader" style="display: none; margin-top: 10px;">Procesando...</div>
+            <h3 id="result-camera" style="margin-top: 10px;"></h3>
         </div>
 
-        <!-- Sección de subir imágenes -->
+        <!-- Sección de Subir Imágenes -->
         <div id="upload-section" class="content-section" style="margin-top: 20px; display: none;">
             <h2>Subir Imagen</h2>
             <form id="upload-file" method="post" enctype="multipart/form-data">
@@ -47,11 +60,12 @@
                 <input type="file" name="file" id="imageUpload" accept=".png, .jpg, .jpeg" style="display: none;">
             </form>
             <div class="image-preview" style="margin-top: 20px;">
-                <img id="uploaded-image" src="#" alt="Imagen subida" style="display: none; max-width: 100%; border: 1px solid #ddd; margin-bottom: 10px;">
+                <!-- Imagen Cargada -->
+                <img id="uploaded-image" src="#" alt="Imagen subida" style="display: none; max-width: 100%; border: 1px solid black;">
             </div>
             <button class="btn btn-dark" id="btn-predict-upload" style="margin-top: 10px;">Predecir</button>
-            <div class="loader" style="display: none;">Procesando...</div>
-            <h3 id="result-upload"></h3>
+            <div class="loader" style="display: none; margin-top: 10px;">Procesando...</div>
+            <h3 id="result-upload" style="margin-top: 10px;"></h3>
         </div>
     </div>
 
