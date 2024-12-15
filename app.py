@@ -1,20 +1,39 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, redirect, url_for, session
 from tensorflow.keras.models import load_model
 import numpy as np
 from PIL import Image
 import base64
 import io
 import cv2
+import pymysql
+from werkzeug.security import generate_password_hash, check_password_hash
 
-# Clases del modelo
-classes = ['cardboard', 'glass', 'metal', 'organic', 'paper', 'plastic', 'trash']
-
-# Inicialización de la app
+# Inicialización de Flask
 app = Flask(__name__)
+app.secret_key = 'clave_secreta'
+
+# Configuración de la base de datos
+DB_HOST = '18.221.93.23'  # IP de la base de datos
+DB_USER = 'gabo'          # Usuario de la base de datos
+DB_PASSWORD = '1234'      # Contraseña de la base de datos
+DB_NAME = 'hola'          # Nombre de la base de datos
 
 # Ruta del modelo
 MODEL_PATH = "modelos/Densenet121.h5"
 model = load_model(MODEL_PATH)
+
+# Clases del modelo
+classes = ['cardboard', 'glass', 'metal', 'organic', 'paper', 'plastic', 'trash']
+
+def conectar_db():
+    """Conecta a la base de datos."""
+    return pymysql.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
 def preprocess_image(image):
     """Preprocesar la imagen para detección."""
@@ -33,7 +52,7 @@ def detect_object(image, processed_image):
         area = cv2.contourArea(largest_contour)
         if area > 4000:  # Umbral mínimo de área
             return largest_contour
-    return None  # Si no hay objeto detectado
+    return None
 
 def model_predict(image, model):
     """Realiza la predicción usando el modelo cargado."""
@@ -47,17 +66,73 @@ def model_predict(image, model):
 
 @app.route('/')
 def home():
-    return render_template('index.html')
+    if 'user_id' not in session:
+        return redirect(url_for('login'))  # Redirige al login si no está autenticado
+    return render_template('index.html', user_name=session['user_name'])  # Carga index.html si está autenticado
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        usu_nombre = request.form['usu_nombre']
+        usu_correo = request.form['usu_correo']
+        usu_pass = request.form['usu_pass']
+        hashed_password = generate_password_hash(usu_pass)
+
+        try:
+            connection = conectar_db()
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO usuario (usu_nombre, usu_correo, usu_pass, usu_tipo_id) VALUES (%s, %s, %s, %s)",
+                    (usu_nombre, usu_correo, hashed_password, 1)
+                )
+                connection.commit()
+            return redirect(url_for('login'))
+        except Exception as e:
+            return f"Error al registrar: {str(e)}", 500
+        finally:
+            connection.close()
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        usu_correo = request.form['usu_correo']
+        usu_pass = request.form['usu_pass']
+
+        try:
+            connection = conectar_db()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT * FROM usuario WHERE usu_correo = %s", (usu_correo,))
+                user = cursor.fetchone()
+
+                if user and check_password_hash(user['usu_pass'], usu_pass):
+                    session['user_id'] = user['usu_id']
+                    session['user_name'] = user['usu_nombre']
+                    return redirect(url_for('home'))  # Redirige a index.html después de iniciar sesión
+                else:
+                    return "Usuario o contraseña incorrectos", 401
+        except Exception as e:
+            return f"Error al iniciar sesión: {str(e)}", 500
+        finally:
+            connection.close()
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))  # Redirige al login después de cerrar sesión
 
 @app.route('/camera_predict', methods=['POST'])
 def camera_predict():
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
     try:
         data = request.get_json()
         image_data = data['image']
-        mirror_mode = data['mirror_mode']  # Recibe si está en modo espejo
+        mirror_mode = data['mirror_mode']
         image = Image.open(io.BytesIO(base64.b64decode(image_data.split(',')[1])))
-        
-        # Preprocesar y detectar el objeto
+
         original_image, processed_image = preprocess_image(image)
         contour = detect_object(original_image, processed_image)
 
@@ -66,15 +141,12 @@ def camera_predict():
             cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
             cropped_image = cv2.bitwise_and(original_image, original_image, mask=mask)
 
-            # Convertir el recorte a PIL para predecir
             cropped_pil = Image.fromarray(cropped_image)
             if mirror_mode:
                 cropped_pil = cropped_pil.transpose(Image.FLIP_LEFT_RIGHT)
 
-            # Realizar la predicción
             predicted_class, confidence = model_predict(cropped_pil, model)
 
-            # Devolver el contorno
             contour_points = contour.reshape(-1, 2).tolist()
             return jsonify({
                 "predicted_class": predicted_class,
@@ -88,6 +160,9 @@ def camera_predict():
 
 @app.route('/predict', methods=['POST'])
 def upload_predict():
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
     try:
         file = request.files['file']
         image = Image.open(io.BytesIO(file.read()))
