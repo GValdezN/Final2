@@ -1,133 +1,131 @@
-$(document).ready(function () {
-    const video = document.getElementById('camera-stream');
-    const canvas = document.getElementById('camera-canvas');
-    const capturedCanvas = document.getElementById('captured-image');
-    const loader = $('.loader');
-    let isFrontCamera = true;
-
-    // Alternar entre secciones
-    $('a.nav-link').click(function (e) {
-        e.preventDefault();
-        const target = $(this).attr('href');
-        $('.content-section').hide();
-        $(target).show();
-    });
-
-    // Función para iniciar la cámara
-    async function startCamera() {
-        try {
-            const constraints = {
-                video: {
-                    facingMode: isFrontCamera ? 'user' : 'environment'
-                }
-            };
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            video.srcObject = stream;
-            video.style.transform = isFrontCamera ? 'scaleX(-1)' : 'scaleX(1)';
-        } catch (err) {
-            console.error("Error al acceder a la cámara:", err);
-            alert("No se pudo acceder a la cámara. Verifica los permisos.");
+$(document).ready(function(){
+    const video=document.getElementById("camera-stream")
+    const canvas=document.getElementById("camera-canvas")
+    const capturedCanvas=document.getElementById("captured-image")
+    const loader=$(".loader")
+    let isCameraActive=false
+    let lastImagePath=null
+    async function startCamera(){
+        try{
+            const stream=await navigator.mediaDevices.getUserMedia({video:true})
+            video.srcObject=stream
+            isCameraActive=true
+        }catch(err){
+            console.error("Error al acceder a la cámara:",err)
+            alert("Verifica los permisos de la cámara en el navegador.")
         }
     }
-
-    // Cambiar entre cámara frontal y trasera
-    $('#btn-toggle-camera').click(function () {
-        isFrontCamera = !isFrontCamera;
-        startCamera();
-    });
-
-    // Capturar imagen y predecir
-    $('#btn-capture').click(function () {
-        const context = canvas.getContext('2d');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-
-        if (isFrontCamera) {
-            // Si está en modo espejo, invertir horizontalmente
-            context.translate(canvas.width, 0);
-            context.scale(-1, 1);
+    function sendFeedback(descriptionSelector,likeSelector,sectionSelector){
+        const feedbackData={
+            description:$(descriptionSelector).val(),
+            like:$(likeSelector).is(":checked")?1:0,
+            image_path:lastImagePath
         }
-
-        // Dibujar la imagen en el canvas
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        if (isFrontCamera) {
-            // Restaurar la transformación después de dibujar
-            context.setTransform(1, 0, 0, 1, 0, 0);
+        if(!feedbackData.description.trim()){
+            alert("La descripción no puede estar vacía.")
+            return
         }
-
-        const imageData = canvas.toDataURL('image/jpeg');
-        loader.show();
-
         $.ajax({
-            type: 'POST',
-            url: '/camera_predict',
-            data: JSON.stringify({ image: imageData, mirror_mode: isFrontCamera }),
-            contentType: 'application/json',
-            success: function (data) {
-                loader.hide();
-                const ctxCaptured = capturedCanvas.getContext('2d');
-                capturedCanvas.width = canvas.width;
-                capturedCanvas.height = canvas.height;
-
-                // Dibujar la imagen capturada en el canvas del lado derecho
-                ctxCaptured.drawImage(canvas, 0, 0, canvas.width, canvas.height);
-
-                // Dibujar el contorno del objeto detectado
-                if (data.contour) {
-                    ctxCaptured.beginPath();
-                    ctxCaptured.moveTo(data.contour[0][0], data.contour[0][1]);
-                    data.contour.forEach(point => ctxCaptured.lineTo(point[0], point[1]));
-                    ctxCaptured.closePath();
-                    ctxCaptured.strokeStyle = 'green';
-                    ctxCaptured.lineWidth = 3;
-                    ctxCaptured.stroke();
-                }
-
-                $('#result-camera').html(
-                    `<b>Predicción:</b> ${data.predicted_class}<br><b>Confianza:</b> ${data.confidence_percentage}%`
-                );
+            type:"POST",
+            url:"/save_feedback",
+            contentType:"application/json",
+            data:JSON.stringify(feedbackData),
+            success:function(){
+                alert("Feedback guardado correctamente.")
+                $(sectionSelector).hide()
+                $(descriptionSelector).val("")
+                $(likeSelector).prop("checked",false)
+                startCamera()
             },
-            error: function (error) {
-                loader.hide();
-                console.error("Error:", error);
+            error:function(){
+                alert("Error al guardar el feedback.")
+                startCamera()
             }
-        });
-    });
-
-    // Mostrar vista previa de la imagen subida
-    $('#imageUpload').change(function () {
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            $('#uploaded-image').attr('src', e.target.result).show();
-            $('#result-upload').html('');
-        };
-        reader.readAsDataURL(this.files[0]);
-    });
-
-    // Predicción desde una imagen subida
-    $('#btn-predict-upload').click(function () {
-        const form_data = new FormData($('#upload-file')[0]);
-        loader.show();
-
+        })
+    }
+    $(".nav-toggle").click(function(e){
+        e.preventDefault()
+        const target=$(this).attr("href")
+        $(".content-section").hide()
+        $(target).show()
+    })
+    $("#btn-toggle-camera").click(function(){
+        if(!isCameraActive){
+            startCamera()
+        }
+    })
+    $("#btn-capture").click(function(){
+        if(!isCameraActive){
+            alert("Primero activa la cámara.")
+            return
+        }
+        const context=capturedCanvas.getContext("2d")
+        capturedCanvas.width=video.videoWidth
+        capturedCanvas.height=video.videoHeight
+        context.drawImage(video,0,0,capturedCanvas.width,capturedCanvas.height)
+        const imageData=capturedCanvas.toDataURL("image/png")
+        loader.show()
         $.ajax({
-            type: 'POST',
-            url: '/predict',
-            data: form_data,
-            contentType: false,
-            processData: false,
-            success: function (data) {
-                loader.hide();
-                $('#result-upload').html(
-                    `<b>Predicción:</b> ${data.predicted_class}<br><b>Confianza:</b> ${data.confidence_percentage}%`
-                );
+            type:"POST",
+            url:"/predict_feedback",
+            contentType:"application/json",
+            data:JSON.stringify({image_data:imageData}),
+            success:function(response){
+                loader.hide()
+                $("#result-camera").html("<b>Predicción:</b> "+response.predicted_class+"<br><b>Confianza:</b> "+response.confidence_percentage+"%")
+                lastImagePath=response.image_path
+                $("#feedback-section").show()
             },
-            error: function (error) {
-                loader.hide();
-                console.error("Error:", error);
+            error:function(){
+                loader.hide()
+                alert("Error durante la predicción.")
             }
-        });
-    });
-
-    startCamera();
-});
+        })
+    })
+    $("#btn-feedback").click(function(){
+        sendFeedback("#feedback-description","#feedback-like","#feedback-section")
+    })
+    $("#imageUpload").change(function(){
+        const file=this.files[0]
+        if(file){
+            const reader=new FileReader()
+            reader.onload=function(e){
+                $("#uploaded-image").attr("src",e.target.result).show()
+                $("#feedback-section-upload").hide()
+            }
+            reader.readAsDataURL(file)
+        }
+    })
+    $("#btn-predict-upload").click(function(){
+        const file=$("#imageUpload")[0].files[0]
+        if(!file){
+            alert("Selecciona una imagen para subir.")
+            return
+        }
+        const formData=new FormData()
+        formData.append("file",file)
+        loader.show()
+        $.ajax({
+            type:"POST",
+            url:"/predict_feedback",
+            data:formData,
+            processData:false,
+            contentType:false,
+            success:function(response){
+                loader.hide()
+                $("#result-upload").html("<b>Predicción:</b> "+response.predicted_class+"<br><b>Confianza:</b> "+response.confidence_percentage+"%")
+                $("#uploaded-image").attr("src",response.image_path).show()
+                lastImagePath=response.image_path
+                $("#feedback-section-upload").show()
+            },
+            error:function(){
+                loader.hide()
+                alert("Error durante la predicción.")
+            }
+        })
+    })
+    $("#btn-feedback-upload").click(function(){
+        sendFeedback("#feedback-description-upload","#feedback-like-upload","#feedback-section-upload")
+    })
+    startCamera()
+})

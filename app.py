@@ -4,19 +4,24 @@ import numpy as np
 from PIL import Image
 import base64
 import io
-import cv2
+import os
 import pymysql
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 # Inicialización de Flask
 app = Flask(__name__)
 app.secret_key = 'clave_secreta'
 
 # Configuración de la base de datos
-DB_HOST = '18.221.93.23'  # IP de la base de datos
-DB_USER = 'gabo'          # Usuario de la base de datos
-DB_PASSWORD = '1234'      # Contraseña de la base de datos
-DB_NAME = 'hola'          # Nombre de la base de datos
+DB_HOST = '18.221.93.23'
+DB_USER = 'gabo'
+DB_PASSWORD = '1234'
+DB_NAME = 'hola'
+
+# Configuración de rutas para guardar imágenes
+UPLOAD_FOLDER = 'static/captured_images'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Ruta del modelo
 MODEL_PATH = "modelos/Densenet121.h5"
@@ -35,25 +40,6 @@ def conectar_db():
         cursorclass=pymysql.cursors.DictCursor
     )
 
-def preprocess_image(image):
-    """Preprocesar la imagen para detección."""
-    np_image = np.array(image)
-    gray = cv2.cvtColor(np_image, cv2.COLOR_RGB2GRAY)
-    blurred = cv2.GaussianBlur(gray, (7, 7), 1)
-    edges = cv2.Canny(blurred, 49, 37)
-    dilated = cv2.dilate(edges, np.ones((5, 5)), iterations=1)
-    return np_image, dilated
-
-def detect_object(image, processed_image):
-    """Detectar el objeto y devolver el contorno."""
-    contours, _ = cv2.findContours(processed_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-    if contours:
-        largest_contour = max(contours, key=cv2.contourArea)
-        area = cv2.contourArea(largest_contour)
-        if area > 4000:  # Umbral mínimo de área
-            return largest_contour
-    return None
-
 def model_predict(image, model):
     """Realiza la predicción usando el modelo cargado."""
     image_resized = image.resize((224, 224), Image.BILINEAR)
@@ -67,8 +53,8 @@ def model_predict(image, model):
 @app.route('/')
 def home():
     if 'user_id' not in session:
-        return redirect(url_for('login'))  # Redirige al login si no está autenticado
-    return render_template('index.html', user_name=session['user_name'])  # Carga index.html si está autenticado
+        return redirect(url_for('login'))
+    return render_template('index.html', user_name=session['user_name'])
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -108,7 +94,7 @@ def login():
                 if user and check_password_hash(user['usu_pass'], usu_pass):
                     session['user_id'] = user['usu_id']
                     session['user_name'] = user['usu_nombre']
-                    return redirect(url_for('home'))  # Redirige a index.html después de iniciar sesión
+                    return redirect(url_for('home'))
                 else:
                     return "Usuario o contraseña incorrectos", 401
         except Exception as e:
@@ -120,56 +106,68 @@ def login():
 @app.route('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))  # Redirige al login después de cerrar sesión
+    return redirect(url_for('login'))
 
-@app.route('/camera_predict', methods=['POST'])
-def camera_predict():
+@app.route('/predict_feedback', methods=['POST'])
+def predict_feedback():
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
+    try:
+        file = request.files.get('file')
+        image_data = request.json.get('image_data') if not file else None
+
+        if file:
+            image = Image.open(file)
+        elif image_data:
+            image = Image.open(io.BytesIO(base64.b64decode(image_data.split(',')[1])))
+        else:
+            return jsonify({"error": "No se recibió una imagen válida"}), 400
+
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        predicted_class, confidence = model_predict(image, model)
+
+        filename = secure_filename(f"{session['user_id']}_{np.random.randint(1000)}.png")
+        filepath = os.path.join(UPLOAD_FOLDER, filename)
+        image.save(filepath)
+
+        return jsonify({
+            "predicted_class": predicted_class,
+            "confidence_percentage": confidence,
+            "image_path": filepath
+        })
+    except Exception as e:
+        return jsonify({"error": f"Error durante la predicción: {str(e)}"}), 500
+
+@app.route('/save_feedback', methods=['POST'])
+def save_feedback():
     if 'user_id' not in session:
         return jsonify({"error": "No autorizado"}), 401
 
     try:
         data = request.get_json()
-        image_data = data['image']
-        mirror_mode = data['mirror_mode']
-        image = Image.open(io.BytesIO(base64.b64decode(image_data.split(',')[1])))
+        description = data.get('description', '')
+        like = data.get('like', False)
+        image_path = data.get('image_path')
 
-        original_image, processed_image = preprocess_image(image)
-        contour = detect_object(original_image, processed_image)
+        if not description.strip():
+            return jsonify({"error": "La descripción no puede estar vacía"}), 400
 
-        if contour is not None:
-            mask = np.zeros_like(original_image[:, :, 0])
-            cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
-            cropped_image = cv2.bitwise_and(original_image, original_image, mask=mask)
+        connection = conectar_db()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO opinion (opi_descripcion, opi_like, opi_usu_id, opi_imagen_ruta) VALUES (%s, %s, %s, %s)",
+                (description, like, session['user_id'], image_path)
+            )
+            connection.commit()
 
-            cropped_pil = Image.fromarray(cropped_image)
-            if mirror_mode:
-                cropped_pil = cropped_pil.transpose(Image.FLIP_LEFT_RIGHT)
-
-            predicted_class, confidence = model_predict(cropped_pil, model)
-
-            contour_points = contour.reshape(-1, 2).tolist()
-            return jsonify({
-                "predicted_class": predicted_class,
-                "confidence_percentage": confidence,
-                "contour": contour_points
-            })
-        else:
-            return jsonify({"error": "No se detectó ningún objeto."}), 400
+        return jsonify({"message": "Feedback guardado exitosamente"})
     except Exception as e:
-        return jsonify({"error": f"Error: {str(e)}"}), 500
-
-@app.route('/predict', methods=['POST'])
-def upload_predict():
-    if 'user_id' not in session:
-        return jsonify({"error": "No autorizado"}), 401
-
-    try:
-        file = request.files['file']
-        image = Image.open(io.BytesIO(file.read()))
-        predicted_class, confidence = model_predict(image, model)
-        return jsonify({"predicted_class": predicted_class, "confidence_percentage": confidence})
-    except Exception as e:
-        return jsonify({"error": f"Error: {str(e)}"}), 500
+        return jsonify({"error": f"Error al guardar el feedback: {str(e)}"}), 500
+    finally:
+        connection.close()
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=True)
