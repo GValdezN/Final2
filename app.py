@@ -169,5 +169,84 @@ def save_feedback():
     finally:
         connection.close()
 
+@app.route('/my_feedbacks', methods=['GET'])
+def my_feedbacks():
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
+    try:
+        connection = conectar_db()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT opi_id, opi_descripcion, opi_like, opi_imagen_ruta FROM opinion WHERE opi_usu_id = %s",
+                (session['user_id'],)
+            )
+            feedbacks = cursor.fetchall()
+        return jsonify({"feedbacks": feedbacks})
+    except Exception as e:
+        return jsonify({"error": f"Error al cargar los feedbacks: {str(e)}"}), 500
+    finally:
+        connection.close()
+
+@app.route('/delete_feedback/<int:feedback_id>', methods=['DELETE'])
+def delete_feedback(feedback_id):
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
+    try:
+        connection = conectar_db()
+        with connection.cursor() as cursor:
+            # Obtén la ruta de la imagen antes de eliminar el registro
+            cursor.execute(
+                "SELECT opi_imagen_ruta FROM opinion WHERE opi_id = %s AND opi_usu_id = %s",
+                (feedback_id, session['user_id'])
+            )
+            result = cursor.fetchone()
+
+            if not result:
+                return jsonify({"error": "Feedback no encontrado o no autorizado"}), 404
+
+            image_path = result['opi_imagen_ruta']
+
+            # Elimina el registro en la base de datos
+            cursor.execute(
+                "DELETE FROM opinion WHERE opi_id = %s AND opi_usu_id = %s",
+                (feedback_id, session['user_id'])
+            )
+            connection.commit()
+
+        # Elimina el archivo del sistema de archivos
+        if image_path and os.path.exists(image_path):
+            os.remove(image_path)
+
+        return jsonify({"message": "Feedback eliminado correctamente"})
+    except Exception as e:
+        return jsonify({"error": f"Error al eliminar el feedback: {str(e)}"}), 500
+    finally:
+        connection.close()
+
+@app.route('/edit_feedback/<int:feedback_id>', methods=['PUT'])
+def edit_feedback(feedback_id):
+    if 'user_id' not in session:
+        return jsonify({"error": "No autorizado"}), 401
+
+    try:
+        data = request.get_json()
+        description = data.get('description')
+        like = data.get('like')
+
+        connection = conectar_db()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE opinion SET opi_descripcion = %s, opi_like = %s WHERE opi_id = %s AND opi_usu_id = %s",
+                (description, like, feedback_id, session['user_id'])
+            )
+            connection.commit()
+        return jsonify({"message": "Feedback modificado correctamente"})
+    except Exception as e:
+        return jsonify({"error": f"Error al modificar el feedback: {str(e)}"}), 500
+    finally:
+        connection.close()
+        
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5000, debug=True)
