@@ -6,17 +6,62 @@ $(document).ready(function () {
     let isCameraActive = false;
     let lastImagePath = null;
 
-    // Inicia la cámara en tiempo real
-    async function startCamera() {
+    async function getCameras() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === "videoinput");
+        return videoDevices;
+    }
+
+    // Inicia la cámara con un dispositivo específico
+    async function startCamera(deviceId) {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } }
+            });
             video.srcObject = stream;
+            currentStream = stream;
             isCameraActive = true;
         } catch (err) {
             console.error("Error al acceder a la cámara:", err);
             alert("Verifica los permisos de la cámara en el navegador.");
         }
     }
+
+    // Cambia entre la cámara delantera y trasera
+    $("#btn-toggle-camera").click(async function () {
+        if (!isCameraActive) {
+            alert("Primero activa la cámara.");
+            return;
+        }
+
+        // Detener la cámara actual si está activa
+        if (currentStream) {
+            const tracks = currentStream.getTracks();
+            tracks.forEach(track => track.stop());
+        }
+
+        // Obtener las cámaras disponibles
+        const cameras = await getCameras();
+        const currentIndex = cameras.findIndex(camera => camera.deviceId === currentDeviceId);
+        const nextCamera = cameras[(currentIndex + 1) % cameras.length]; // Cambia entre cámaras
+
+        // Iniciar la nueva cámara
+        currentDeviceId = nextCamera.deviceId;
+        startCamera(currentDeviceId);
+    });
+
+    // Inicia la cámara al principio (por defecto cámara delantera)
+    async function initializeCamera() {
+        const cameras = await getCameras();
+        if (cameras.length > 0) {
+            currentDeviceId = cameras[0].deviceId;
+            startCamera(currentDeviceId);
+        } else {
+            alert("No se encontraron cámaras.");
+        }
+    }
+
+    initializeCamera(); // Inicia la cámara al cargar la página
 
     // Carga los feedbacks del usuario
     function loadFeedbacks() {
